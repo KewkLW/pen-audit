@@ -15,6 +15,9 @@ Copy-paste into any AI coding agent (Cursor, Windsurf, Copilot, etc.):
 ```
 Install desloppify: pip install git+https://github.com/peteromallet/desloppify.git
 
+If you're a Claude Code agent, also install the skill for auto-discovery:
+mkdir -p .claude/skills/desloppify && curl -sL https://raw.githubusercontent.com/peteromallet/desloppify/main/SKILL.md -o .claude/skills/desloppify/SKILL.md
+
 Scan my codebase: desloppify scan --path src/. Then: desloppify status for the score,
 desloppify next for the top finding to fix. After fixing: desloppify resolve fixed "<id>".
 For auto-fixable stuff: desloppify fix unused-imports --dry-run. Rescan after each batch.
@@ -24,13 +27,6 @@ Use --lang python for Python projects.
 
 As you work, note any false positives, missing detectors, or improvements and suggest
 them to me so I can report them at https://github.com/peteromallet/desloppify/issues.
-```
-
-**Claude Code** — copy-paste this instead to also install the skill (auto-discovery + workflow guidance):
-
-```
-pip install git+https://github.com/peteromallet/desloppify.git
-mkdir -p .claude/skills/desloppify && curl -sL https://raw.githubusercontent.com/peteromallet/desloppify/main/SKILL.md -o .claude/skills/desloppify/SKILL.md
 ```
 
 ## Quick Start
