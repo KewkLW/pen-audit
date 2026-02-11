@@ -3,7 +3,7 @@
 Each tool delegates to the existing CLI with --json output.
 No code duplication — the CLI is the source of truth.
 
-Setup: add to .mcp.json in your project:
+Setup: add to .mcp.json in your project root:
 {
   "mcpServers": {
     "desloppify": {
@@ -21,7 +21,7 @@ import sys
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
-    print("MCP server requires: pip install mcp[cli]", file=sys.stderr)
+    print("MCP server requires: pip install 'mcp[cli]'", file=sys.stderr)
     sys.exit(1)
 
 mcp = FastMCP("desloppify")
@@ -31,8 +31,10 @@ def _run_cli(*args: str) -> dict:
     """Run a desloppify CLI command and return parsed output."""
     result = subprocess.run(
         [sys.executable, "-m", "desloppify", *args],
-        capture_output=True, text=True, cwd="."
+        capture_output=True, text=True, cwd=".", timeout=300
     )
+    if result.returncode != 0 and not result.stdout.strip():
+        return {"error": result.stderr.strip() or f"Command failed with exit code {result.returncode}"}
     # Try to parse JSON from stdout
     for line in result.stdout.strip().splitlines():
         try:
@@ -41,6 +43,11 @@ def _run_cli(*args: str) -> dict:
             continue
     # Fallback: return raw output
     return {"stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
+
+
+def _lang_args(lang: str | None) -> list[str]:
+    """Build --lang args if lang is specified."""
+    return ["--lang", lang] if lang else []
 
 
 @mcp.tool()
@@ -52,18 +59,14 @@ def scan(path: str = "src/", skip_slow: bool = False, lang: str | None = None) -
         skip_slow: Skip slow detectors like duplicate detection
         lang: Language to scan (auto-detected if omitted)
     """
-    args = []
-    if lang:
-        args += ["--lang", lang]
-    args += ["scan", "--path", path]
+    args = _lang_args(lang) + ["scan", "--path", path]
     if skip_slow:
         args.append("--skip-slow")
-    # Scan writes to state file; get status after
     subprocess.run(
         [sys.executable, "-m", "desloppify", *args],
-        capture_output=True, text=True, cwd="."
+        capture_output=True, text=True, cwd=".", timeout=300
     )
-    return _run_cli("status", "--json")
+    return _run_cli(*_lang_args(lang), "status", "--json")
 
 
 @mcp.tool()
@@ -73,11 +76,7 @@ def status(lang: str | None = None) -> dict:
     Args:
         lang: Language (auto-detected if omitted)
     """
-    args = []
-    if lang:
-        args += ["--lang", lang]
-    args += ["status", "--json"]
-    return _run_cli(*args)
+    return _run_cli(*_lang_args(lang), "status", "--json")
 
 
 @mcp.tool()

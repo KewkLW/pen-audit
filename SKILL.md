@@ -6,11 +6,14 @@ description: >
   duplicate functions, code smells, naming issues, import cycles, or coupling
   problems. Also use when asked for a health score, what to fix next, or to
   create a cleanup plan. Supports TypeScript/React and Python.
+allowed-tools: Bash(desloppify *)
 ---
 
 # Desloppify — Codebase Health Scanner
 
-Run scans and query findings with `desloppify` (or `python -m desloppify`).
+## Prerequisite
+
+!`command -v desloppify >/dev/null 2>&1 && echo "desloppify: installed" || echo "NOT INSTALLED — run: pip install git+https://github.com/peteromallet/desloppify.git"`
 
 ## Quick Reference
 
@@ -34,10 +37,10 @@ desloppify detect <name> --path src/       # run one detector raw (bypass state)
 
 ## Reading Results
 
-After `show`, `next`, or `status`, read `.desloppify/query.json` for structured JSON output.
-This is more reliable than parsing terminal output.
+After running any query command (`show`, `next`, `status`), read `.desloppify/query.json`
+for structured JSON output. This is more reliable than parsing terminal output.
 
-## Detectors Available
+## Detectors
 
 **TypeScript/React**: logs, unused, exports, deprecated, large, complexity, gods,
 single-use, props, passthrough, concerns, deps, dupes, smells, coupling, patterns,
@@ -50,8 +53,8 @@ orphaned, single-use, naming
 
 | Tier | Meaning | Action |
 |------|---------|--------|
-| T1 | Auto-fixable | `desloppify fix <fixer> --dry-run` |
-| T2 | Quick manual fix | Fix directly, resolve |
+| T1 | Auto-fixable | `desloppify fix <fixer> --dry-run` then apply |
+| T2 | Quick manual fix | Fix directly, then resolve |
 | T3 | Needs judgment | Review, fix or wontfix with note |
 | T4 | Major refactor | Decompose, plan before acting |
 
@@ -62,3 +65,4 @@ orphaned, single-use, naming
 - Use `--lang python` or `--lang typescript` to force language selection
 - After fixing, always rescan — cascading effects can create new findings
 - Use `desloppify show <detector>` to focus on one category at a time
+- Score can temporarily drop after fixes (cascade effects are normal)

@@ -22,24 +22,19 @@ mkdir -p .claude/skills/desloppify && curl -sL \
   -o .claude/skills/desloppify/SKILL.md
 ```
 
-Or copy from a local clone:
+That's it. Next time you start Claude Code, ask: "scan my codebase for code quality issues" — Claude knows what to do. The skill auto-triggers when you ask about code quality, technical debt, code smells, etc.
 
-```bash
-mkdir -p .claude/skills/desloppify
-cp path/to/desloppify/SKILL.md .claude/skills/desloppify/SKILL.md
-```
-
-Now ask Claude: "scan my codebase for code quality issues" — it knows what to do.
+**How it works**: Claude reads the skill description on startup. When your conversation matches, it loads the full instructions and runs `desloppify` commands via Bash. Results are written to `.desloppify/query.json` for structured access.
 
 ### Option B: MCP Server
 
-Structured tool interface — Claude calls desloppify tools directly with typed parameters:
+Structured tool interface — Claude calls desloppify tools directly with typed parameters and gets structured JSON responses:
 
 ```bash
 pip install "mcp[cli]"  # additional dependency
 ```
 
-Add to your `.mcp.json`:
+Add to your `.mcp.json` (project root):
 
 ```json
 {
@@ -52,7 +47,7 @@ Add to your `.mcp.json`:
 }
 ```
 
-Exposes tools: `scan`, `status`, `show`, `detect`, `next_finding`, `resolve`.
+Restart Claude Code. It discovers tools: `scan`, `status`, `show`, `detect`, `next_finding`, `resolve`.
 
 ### Option C: Both
 
