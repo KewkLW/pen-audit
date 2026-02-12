@@ -137,11 +137,23 @@ def cmd_scan(args):
 
     codebase_metrics = _collect_codebase_metrics(lang, path)
 
-    # Only store potentials for full scans (not path-scoped)
     from ..utils import rel, _extra_exclusions, PROJECT_ROOT
     scan_path_rel = rel(str(path))
-    is_full_scan = (path.resolve() == PROJECT_ROOT.resolve() or
-                    scan_path_rel == lang.default_src if lang else False)
+    # A scan is "full" when it covers most of the project's source files.
+    # Simple path matching breaks for Python (default_src=".") when the user
+    # scans a subdirectory that happens to contain all the source code.
+    # Instead, compare file counts: if the scanned path covers ≥80% of the
+    # files discoverable from PROJECT_ROOT, treat it as full.
+    is_full_scan = False
+    if lang and lang.file_finder:
+        all_files = lang.file_finder(PROJECT_ROOT)
+        scanned_files = lang.file_finder(path)
+        if all_files:
+            is_full_scan = len(scanned_files) >= 0.8 * len(all_files)
+        else:
+            is_full_scan = True  # no files at all — vacuously full
+    elif path.resolve() == PROJECT_ROOT.resolve():
+        is_full_scan = True
 
     prev_score = state.get("score", 0)
     prev_strict = state.get("strict_score", 0)

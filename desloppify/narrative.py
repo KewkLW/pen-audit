@@ -590,7 +590,6 @@ def _compute_headline(phase: str, dimensions: dict, debt: dict,
 
 def _compute_badge_status() -> dict:
     """Check if scorecard.png exists and whether README references it."""
-    from pathlib import Path
     from .utils import PROJECT_ROOT
 
     scorecard_path = PROJECT_ROOT / "scorecard.png"
@@ -626,7 +625,6 @@ def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
                        dimensions: dict) -> list[dict]:
     """Compute context-specific reminders that should be surfaced every time."""
     reminders = []
-    findings = state.get("findings", {})
     obj_strict = state.get("objective_strict")
 
     # 1. Auto-fixers available
