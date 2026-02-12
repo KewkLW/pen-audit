@@ -7,40 +7,56 @@ from pathlib import Path
 
 from .utils import PROJECT_ROOT
 
+# Render at 2x for retina/high-DPI crispness
+_SCALE = 2
+
 
 def _score_color(score: float) -> tuple[int, int, int]:
-    """Color-code a score: green >= 90, yellow 70-90, red < 70."""
+    """Color-code a score with warm tones: sage >= 90, mustard 70-90, dusty rose < 70."""
     if score >= 90:
-        return (74, 222, 128)   # green-400
+        return (110, 153, 112)   # sage green
     if score >= 70:
-        return (250, 204, 21)   # yellow-400
-    return (248, 113, 113)      # red-400
+        return (196, 164, 90)    # mustard
+    return (185, 110, 110)       # dusty rose
 
 
-def _load_font(size: int, bold: bool = False, mono: bool = False):
-    """Load a good font with cross-platform fallback."""
+def _load_font(size: int, *, serif: bool = False, bold: bool = False, mono: bool = False):
+    """Load a font with cross-platform fallback."""
     from PIL import ImageFont
 
+    size = size * _SCALE
     candidates = []
     if mono:
         candidates = [
-            "/System/Library/Fonts/SFNSMono.ttf",        # macOS
+            "/System/Library/Fonts/SFNSMono.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
         ]
+    elif serif and bold:
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+            "/System/Library/Fonts/NewYork.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+        ]
+    elif serif:
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Georgia.ttf",
+            "/System/Library/Fonts/NewYork.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        ]
     elif bold:
         candidates = [
-            "/System/Library/Fonts/SFCompact.ttf",       # macOS
+            "/System/Library/Fonts/SFCompact.ttf",
             "/System/Library/Fonts/HelveticaNeue.ttc",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         ]
     else:
         candidates = [
-            "/System/Library/Fonts/SFCompact.ttf",       # macOS
+            "/System/Library/Fonts/SFCompact.ttf",
             "/System/Library/Fonts/HelveticaNeue.ttc",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         ]
     for path in candidates:
         try:
@@ -48,6 +64,11 @@ def _load_font(size: int, bold: bool = False, mono: bool = False):
         except (OSError, IOError):
             continue
     return ImageFont.load_default()
+
+
+def _s(v: int | float) -> int:
+    """Scale a layout value."""
+    return int(v * _SCALE)
 
 
 def generate_scorecard(state: dict, output_path: str | Path) -> Path:
@@ -59,104 +80,111 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     obj_score = state.get("objective_score")
     obj_strict = state.get("objective_strict")
 
-    # Fall back to weighted progress score if no objective health
     main_score = obj_score if obj_score is not None else state.get("score", 0)
     strict_score = obj_strict if obj_strict is not None else state.get("strict_score", 0)
 
-    # Fonts
-    font_title = _load_font(22, bold=True)
-    font_big = _load_font(64, bold=True)
-    font_strict = _load_font(22)
-    font_header = _load_font(13, bold=True, mono=True)
-    font_row = _load_font(14, mono=True)
-    font_tiny = _load_font(11)
+    # Fonts — serif for headings, mono for data
+    font_title = _load_font(19, serif=True, bold=True)
+    font_big = _load_font(52, serif=True, bold=True)
+    font_strict = _load_font(18, serif=True)
+    font_label = _load_font(11, serif=True)
+    font_header = _load_font(11, mono=True)
+    font_row = _load_font(12, mono=True)
+    font_tiny = _load_font(9, serif=True)
 
-    # Colors
-    BG = (17, 17, 27)          # near-black with blue tint
-    BG2 = (24, 24, 38)         # slightly lighter for table area
-    TEXT = (229, 229, 241)      # off-white
-    DIM = (113, 113, 142)      # muted
-    ACCENT = (99, 102, 241)    # indigo-500
-    ACCENT_DIM = (55, 56, 90)  # muted indigo
+    # Wes Anderson palette — warm cream with muted accents
+    BG = (248, 241, 229)           # warm cream
+    BG_TABLE = (241, 233, 219)     # slightly darker cream for table
+    TEXT = (62, 52, 42)            # warm dark brown
+    DIM = (148, 132, 112)         # warm muted brown
+    BORDER = (198, 182, 158)      # warm tan border
+    ACCENT = (156, 120, 96)       # warm brown accent
+    SCORE_GREEN = (110, 153, 112) # sage green
+    FRAME = (178, 158, 132)       # frame color
 
-    # Layout calculations
+    # Layout
     active_dims = [(name, data) for name, data in dim_scores.items()
                    if data.get("checks", 0) > 0]
     row_count = len(active_dims)
-    W = 500
-    table_top = 165
-    row_h = 28
-    table_h = 30 + row_count * row_h + 16  # header + rows + padding
-    H = table_top + table_h + 40
+    W = _s(440)
+    pad = _s(24)
+    frame_w = _s(2)
+    table_top = _s(146)
+    row_h = _s(24)
+    table_h = _s(26) + row_count * row_h + _s(12)
+    H = table_top + table_h + _s(36)
 
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # --- Background flair ---
-    # Smooth radial glow in top-right corner
-    glow_cx, glow_cy = W - 50, 25
-    glow_max_r = 180
-    for i in range(100):
-        r = glow_max_r - i * 1.8
-        if r <= 0:
-            break
-        t = i / 100  # 0..1
-        intensity = int(10 * (1 - t) ** 2)
-        bbox = (glow_cx - r, glow_cy - r, glow_cx + r, glow_cy + r)
-        draw.ellipse(bbox, fill=(
-            BG[0] + intensity,
-            BG[1] + intensity,
-            BG[2] + intensity * 3,  # blue-tinted glow
-        ))
+    # --- Outer frame (Wes Anderson loves deliberate borders) ---
+    draw.rectangle((0, 0, W - 1, H - 1), outline=FRAME, width=_s(2))
+    # Inner frame with slight inset
+    inset = _s(6)
+    draw.rectangle((inset, inset, W - 1 - inset, H - 1 - inset), outline=BORDER, width=1)
 
-    # Accent line at top
-    draw.rectangle((0, 0, W, 3), fill=ACCENT)
+    # --- Decorative rule under title area ---
+    rule_y = _s(44)
+    rule_margin = _s(60)
+    draw.rectangle((rule_margin, rule_y, W - rule_margin, rule_y), fill=BORDER)
+    # Small diamond in center of rule
+    diamond_cx = W // 2
+    diamond_s = _s(3)
+    draw.polygon([
+        (diamond_cx, rule_y - diamond_s),
+        (diamond_cx + diamond_s, rule_y),
+        (diamond_cx, rule_y + diamond_s),
+        (diamond_cx - diamond_s, rule_y),
+    ], fill=ACCENT)
 
     # --- Title ---
     title = "Desloppify Score"
     tw = draw.textlength(title, font=font_title)
-    draw.text(((W - tw) / 2, 24), title, fill=TEXT, font=font_title)
+    draw.text(((W - tw) / 2, _s(18)), title, fill=TEXT, font=font_title)
 
     # --- Main score ---
     score_str = f"{main_score:.1f}"
     score_color = _score_color(main_score)
     sw = draw.textlength(score_str, font=font_big)
 
-    # Strict label next to main score
     strict_str = f"strict: {strict_score:.1f}"
     strict_w = draw.textlength(strict_str, font=font_strict)
 
     # Center the pair
-    total_w = sw + 16 + strict_w
+    gap = _s(12)
+    total_w = sw + gap + strict_w
     x_start = (W - total_w) / 2
-    score_y = 62
+    score_y = _s(54)
     draw.text((x_start, score_y), score_str, fill=score_color, font=font_big)
-    # Vertically center strict with the score
-    strict_y = score_y + 30
-    draw.text((x_start + sw + 16, strict_y), strict_str, fill=DIM, font=font_strict)
+    strict_y = score_y + _s(22)
+    draw.text((x_start + sw + gap, strict_y), strict_str, fill=DIM, font=font_strict)
 
-    # --- Separator ---
-    sep_y = table_top - 14
-    draw.rectangle((32, sep_y, W - 32, sep_y + 1), fill=ACCENT_DIM)
+    # --- Decorative rule above table ---
+    rule2_y = table_top - _s(14)
+    draw.rectangle((rule_margin, rule2_y, W - rule_margin, rule2_y), fill=BORDER)
 
-    # --- Table background ---
-    draw.rounded_rectangle((28, table_top - 6, W - 28, table_top + table_h), radius=8, fill=BG2)
+    # --- Table area ---
+    table_x1 = pad + _s(4)
+    table_x2 = W - pad - _s(4)
+    draw.rounded_rectangle(
+        (table_x1, table_top - _s(2), table_x2, table_top + table_h),
+        radius=_s(4), fill=BG_TABLE, outline=BORDER, width=1)
 
     # --- Table header ---
-    col_name = 46
-    col_health = 320
-    col_strict = 416
-    header_y = table_top + 6
+    col_name = table_x1 + _s(14)
+    col_health = _s(280)
+    col_strict = _s(366)
+    header_y = table_top + _s(4)
     draw.text((col_name, header_y), "Dimension", fill=DIM, font=font_header)
     draw.text((col_health, header_y), "Health", fill=DIM, font=font_header)
     draw.text((col_strict, header_y), "Strict", fill=DIM, font=font_header)
 
     # Header underline
-    line_y = header_y + 20
-    draw.rectangle((col_name, line_y, W - 46, line_y), fill=ACCENT_DIM)
+    line_y = header_y + _s(16)
+    draw.rectangle((col_name, line_y, table_x2 - _s(14), line_y), fill=BORDER)
 
     # --- Dimension rows ---
-    y = line_y + 8
+    y = line_y + _s(6)
     for name, data in active_dims:
         score = data.get("score", 100)
         strict = data.get("strict", score)
@@ -168,10 +196,10 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
         y += row_h
 
     # --- Footer ---
-    footer_y = H - 24
+    footer_y = H - _s(22)
     footer = "github.com/peteromallet/desloppify"
     fw = draw.textlength(footer, font=font_tiny)
-    draw.text(((W - fw) / 2, footer_y), footer, fill=ACCENT_DIM, font=font_tiny)
+    draw.text(((W - fw) / 2, footer_y), footer, fill=DIM, font=font_tiny)
 
     img.save(str(output_path), "PNG", optimize=True)
     return output_path

@@ -188,7 +188,8 @@ def cmd_scan(args):
             generate_scorecard(state, badge_path)
             rel_path = badge_path.name if badge_path.parent == PROJECT_ROOT else str(badge_path)
             print(c(f"  Scorecard → {rel_path}", "dim") +
-                  c(f"  (disable: --no-badge | move: --badge-path <path>)", "dim"))
+                  c(f"  (add to README: ![Desloppify Score]({rel_path}) | "
+                    f"disable: --no-badge | move: --badge-path <path>)", "dim"))
     except ImportError:
         pass  # Pillow not installed — skip silently
 
