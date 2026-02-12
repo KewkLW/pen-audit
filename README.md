@@ -2,9 +2,9 @@
 
 Codebase health scanner. Detects cruft (dead code, duplication, complexity, smells), tracks findings across scans, auto-fixes mechanical issues, reports a weighted score. TypeScript/React and Python out of the box — [add your own language](#adding-a-language) with one directory.
 
-Every scan generates a scorecard badge you can add to your README:
+Every scan generates a scorecard badge you can add to your README — here's the one for this repo:
 
-<img src="scorecard.png" width="400">
+<img src="scorecard.png" width="380">
 
 ## Install
 
