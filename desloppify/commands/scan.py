@@ -187,9 +187,24 @@ def cmd_scan(args):
         if not disabled and badge_path:
             generate_scorecard(state, badge_path)
             rel_path = badge_path.name if badge_path.parent == PROJECT_ROOT else str(badge_path)
-            print(c(f"  Scorecard → {rel_path}", "dim") +
-                  c(f"  (add to README: ![Desloppify Score]({rel_path}) | "
-                    f"disable: --no-badge | move: --badge-path <path>)", "dim"))
+            # Check if README already references the scorecard
+            readme_has_badge = False
+            for readme_name in ("README.md", "readme.md", "README.MD"):
+                readme_path = PROJECT_ROOT / readme_name
+                if readme_path.exists():
+                    try:
+                        if rel_path in readme_path.read_text():
+                            readme_has_badge = True
+                    except OSError:
+                        pass
+                    break
+            if readme_has_badge:
+                print(c(f"  Scorecard → {rel_path}  (disable: --no-badge | move: --badge-path <path>)", "dim"))
+            else:
+                print(c(f"  Scorecard → {rel_path}", "dim"))
+                print(c(f"  💡 Ask the user if they'd like to add it to their README with:", "dim"))
+                print(c(f'     <img src="{rel_path}" width="400">', "dim"))
+                print(c(f"     (disable: --no-badge | move: --badge-path <path>)", "dim"))
     except ImportError:
         pass  # Pillow not installed — skip silently
 
