@@ -49,11 +49,31 @@ DETECTOR_TOOLS = {
 _STRUCTURAL_MERGE = {"large", "complexity", "gods", "concerns"}
 
 
+def _count_open_by_detector(findings: dict) -> dict[str, int]:
+    """Count open findings by detector, merging structural sub-detectors."""
+    by_det: dict[str, int] = {}
+    for f in findings.values():
+        if f["status"] != "open":
+            continue
+        det = f.get("detector", "unknown")
+        if det in _STRUCTURAL_MERGE:
+            det = "structural"
+        by_det[det] = by_det.get(det, 0) + 1
+    return by_det
+
+
 def compute_narrative(state: dict, *, diff: dict | None = None,
-                      lang: str | None = None) -> dict:
+                      lang: str | None = None,
+                      command: str | None = None) -> dict:
     """Compute structured narrative context from state data.
 
     Returns a dict with: phase, headline, dimensions, actions, tools, debt, milestone.
+
+    Args:
+        state: Current state dict.
+        diff: Scan diff (only present after a scan).
+        lang: Language name (e.g. "python", "typescript").
+        command: The command that triggered this (e.g. "scan", "fix", "resolve").
     """
     history = state.get("scan_history", [])
     dim_scores = state.get("dimension_scores", {})
@@ -62,15 +82,19 @@ def compute_narrative(state: dict, *, diff: dict | None = None,
     obj_score = state.get("objective_score")
     findings = state.get("findings", {})
 
+    by_det = _count_open_by_detector(findings)
+    badge = _compute_badge_status()
+
     phase = _detect_phase(history, obj_strict)
     dimensions = _analyze_dimensions(dim_scores, history, state)
     debt = _analyze_debt(dim_scores, findings, history)
     milestone = _detect_milestone(state, diff, history)
-    actions = _compute_actions(findings, dim_scores, state, debt, lang)
-    tools = _compute_tools(findings, dim_scores, lang)
+    actions = _compute_actions(by_det, dim_scores, state, debt, lang)
+    tools = _compute_tools(by_det, lang, badge)
     headline = _compute_headline(phase, dimensions, debt, milestone, diff,
                                  obj_strict, obj_score, stats, history)
-    reminders = _compute_reminders(state, diff, lang, phase, debt, actions, dimensions)
+    reminders = _compute_reminders(state, lang, phase, debt, actions,
+                                   dimensions, badge, command)
 
     return {
         "phase": phase,
@@ -113,13 +137,8 @@ def _detect_phase(history: list[dict], obj_strict: float | None) -> str:
             if spread <= 0.5:
                 return "stagnation"
 
-    if strict is not None:
-        if strict > 93:
-            return "maintenance"
-        if strict > 80:
-            return "refinement"
-
-    # Early momentum: scans 2-5 with score rising
+    # Early momentum: scans 2-5 with score rising — check BEFORE score thresholds
+    # so early projects get motivational framing even if score is already high
     if len(history) <= 5:
         if len(history) >= 2:
             first = history[0].get("objective_strict")
@@ -127,6 +146,12 @@ def _detect_phase(history: list[dict], obj_strict: float | None) -> str:
             if first is not None and last is not None and last > first:
                 return "early_momentum"
         return "early_momentum"
+
+    if strict is not None:
+        if strict > 93:
+            return "maintenance"
+        if strict > 80:
+            return "refinement"
 
     return "middle_grind"
 
@@ -316,24 +341,27 @@ def _detect_milestone(state: dict, diff: dict | None,
 
 # ── Recommended actions ────────────────────────────────────
 
-def _compute_actions(findings: dict, dim_scores: dict, state: dict,
+def _compute_actions(by_det: dict[str, int], dim_scores: dict, state: dict,
                      debt: dict, lang: str | None) -> list[dict]:
     """Compute prioritized action list with tool mapping."""
-    from .scoring import merge_potentials, compute_score_impact
+    from .scoring import merge_potentials, compute_score_impact, get_dimension_for_detector
 
     potentials = merge_potentials(state.get("potentials", {}))
     actions = []
     priority = 0
 
-    # Count open findings by detector
-    by_det: dict[str, int] = {}
-    for f in findings.values():
-        if f["status"] != "open":
-            continue
-        det = f.get("detector", "unknown")
-        if det in _STRUCTURAL_MERGE:
-            det = "structural"
-        by_det[det] = by_det.get(det, 0) + 1
+    def _impact_for(det: str, count: int) -> float:
+        if not potentials or not dim_scores:
+            return 0.0
+        return compute_score_impact(
+            {k: {"score": v["score"], "tier": v.get("tier", 3),
+                  "detectors": v.get("detectors", {})}
+             for k, v in dim_scores.items()},
+            potentials, det, count)
+
+    def _dim_name_for(det: str) -> str:
+        dim = get_dimension_for_detector(det)
+        return dim.name if dim else "Unknown"
 
     # Auto-fixable actions (or manual-fix for Python)
     for det, tool_info in DETECTOR_TOOLS.items():
@@ -343,17 +371,7 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
         if count == 0:
             continue
 
-        impact = 0.0
-        if potentials and dim_scores:
-            impact = compute_score_impact(
-                {k: {"score": v["score"], "tier": v.get("tier", 3),
-                      "detectors": v.get("detectors", {})}
-                 for k, v in dim_scores.items()},
-                potentials, det, count)
-
-        from .scoring import get_dimension_for_detector
-        dim = get_dimension_for_detector(det)
-        dim_name = dim.name if dim else "Unknown"
+        impact = _impact_for(det, count)
 
         # Python has no auto-fixers — suggest manual fix instead
         if lang == "python":
@@ -361,10 +379,11 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
             actions.append({
                 "priority": priority,
                 "type": "manual_fix",
+                "count": count,
                 "description": f"{count} {det} findings — fix manually",
                 "command": f"desloppify show {det} --status open",
                 "impact": round(impact, 1),
-                "dimension": dim_name,
+                "dimension": _dim_name_for(det),
             })
             continue
 
@@ -373,10 +392,11 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
             actions.append({
                 "priority": priority,
                 "type": "auto_fix",
+                "count": count,
                 "description": f"{count} {det} findings — auto-fixable",
                 "command": f"desloppify fix {fixer} --dry-run",
                 "impact": round(impact, 1),
-                "dimension": dim_name,
+                "dimension": _dim_name_for(det),
             })
             break  # One action per detector, listing first fixer
 
@@ -388,27 +408,17 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
         if count == 0:
             continue
 
-        impact = 0.0
-        if potentials and dim_scores:
-            impact = compute_score_impact(
-                {k: {"score": v["score"], "tier": v.get("tier", 3),
-                      "detectors": v.get("detectors", {})}
-                 for k, v in dim_scores.items()},
-                potentials, det, count)
-
-        from .scoring import get_dimension_for_detector
-        dim = get_dimension_for_detector(det)
-        dim_name = dim.name if dim else "Unknown"
-
+        impact = _impact_for(det, count)
         priority += 1
         actions.append({
             "priority": priority,
             "type": "reorganize",
+            "count": count,
             "description": f"{count} {det} findings — restructure with move",
             "command": f"desloppify show {det} --status open",
             "tool_hint": tool_info.get("guidance", ""),
             "impact": round(impact, 1),
-            "dimension": dim_name,
+            "dimension": _dim_name_for(det),
         })
 
     # Refactor actions
@@ -419,26 +429,16 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
         if count == 0:
             continue
 
-        impact = 0.0
-        if potentials and dim_scores:
-            impact = compute_score_impact(
-                {k: {"score": v["score"], "tier": v.get("tier", 3),
-                      "detectors": v.get("detectors", {})}
-                 for k, v in dim_scores.items()},
-                potentials, det, count)
-
-        from .scoring import get_dimension_for_detector
-        dim = get_dimension_for_detector(det)
-        dim_name = dim.name if dim else "Unknown"
-
+        impact = _impact_for(det, count)
         priority += 1
         actions.append({
             "priority": priority,
             "type": tool_info["action_type"],
+            "count": count,
             "description": f"{count} {det} findings — {tool_info.get('guidance', 'manual fix')}",
             "command": f"desloppify show {det} --status open",
             "impact": round(impact, 1),
-            "dimension": dim_name,
+            "dimension": _dim_name_for(det),
         })
 
     # Debt review action
@@ -463,19 +463,9 @@ def _compute_actions(findings: dict, dim_scores: dict, state: dict,
 
 # ── Tool inventory ─────────────────────────────────────────
 
-def _compute_tools(findings: dict, dim_scores: dict,
-                   lang: str | None) -> dict:
+def _compute_tools(by_det: dict[str, int], lang: str | None,
+                   badge: dict) -> dict:
     """Compute available tools inventory for the current context."""
-    # Count open findings by detector
-    by_det: dict[str, int] = {}
-    for f in findings.values():
-        if f["status"] != "open":
-            continue
-        det = f.get("detector", "unknown")
-        if det in _STRUCTURAL_MERGE:
-            det = "structural"
-        by_det[det] = by_det.get(det, 0) + 1
-
     # Available fixers (only those with >0 open findings)
     fixers = []
     if lang != "python":
@@ -507,9 +497,6 @@ def _compute_tools(findings: dict, dim_scores: dict,
         move_reasons.append(f"{by_det['flat_dirs']} flat directories")
     if by_det.get("naming", 0):
         move_reasons.append(f"{by_det['naming']} naming issues")
-
-    # Badge / scorecard status
-    badge = _compute_badge_status()
 
     return {
         "fixers": fixers,
@@ -583,6 +570,21 @@ def _compute_headline(phase: str, dimensions: dict, debt: dict,
     if phase == "maintenance":
         return f"Health {obj_strict:.1f}/100 — maintenance mode. Watch for regressions."
 
+    # Middle grind fallback — always give something actionable
+    if phase == "middle_grind":
+        open_count = stats.get("open", 0)
+        if lowest:
+            top = lowest[0]
+            return (f"{open_count} findings open. Focus on {top['name']} "
+                    f"({top['strict']}%) — {top['issues']} items to clear.")
+        if open_count > 0:
+            return f"{open_count} findings open. Run `desloppify next` for the highest-priority item."
+
+    # Early momentum fallback
+    if phase == "early_momentum" and obj_strict is not None:
+        open_count = stats.get("open", 0)
+        return f"Score {obj_strict:.1f}/100 with {open_count} findings open. Keep the momentum going."
+
     return None
 
 
@@ -620,9 +622,10 @@ def _compute_badge_status() -> dict:
 
 # ── Contextual reminders ─────────────────────────────────
 
-def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
+def _compute_reminders(state: dict, lang: str | None,
                        phase: str, debt: dict, actions: list[dict],
-                       dimensions: dict) -> list[dict]:
+                       dimensions: dict, badge: dict,
+                       command: str | None) -> list[dict]:
     """Compute context-specific reminders that should be surfaced every time."""
     reminders = []
     obj_strict = state.get("objective_strict")
@@ -631,10 +634,7 @@ def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
     if lang != "python":
         auto_fix_actions = [a for a in actions if a.get("type") == "auto_fix"]
         if auto_fix_actions:
-            total = sum(
-                int(a["description"].split()[0]) for a in auto_fix_actions
-                if a["description"][0].isdigit()
-            )
+            total = sum(a.get("count", 0) for a in auto_fix_actions)
             if total > 0:
                 first_cmd = auto_fix_actions[0].get("command", "desloppify fix <fixer> --dry-run")
                 reminders.append({
@@ -643,8 +643,8 @@ def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
                     "command": first_cmd,
                 })
 
-    # 2. Rescan needed (after fix or resolve — detected by diff being None or command context)
-    if diff is None:
+    # 2. Rescan needed — only after fix or resolve, not passive queries
+    if command in ("fix", "resolve", "ignore"):
         reminders.append({
             "type": "rescan_needed",
             "message": "Rescan to verify — cascading effects may create new findings.",
@@ -653,8 +653,7 @@ def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
 
     # 3. Badge recommendation (strict >= 90 and README doesn't have it)
     if obj_strict is not None and obj_strict >= 90:
-        badge = _compute_badge_status()
-        if badge["generated"] and not badge["in_readme"]:
+        if badge.get("generated") and not badge.get("in_readme"):
             reminders.append({
                 "type": "badge_recommendation",
                 "message": ('Score is above 90! Add the scorecard to your README: '

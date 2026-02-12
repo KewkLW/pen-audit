@@ -101,7 +101,7 @@ def _apply_and_report(args, path, fixer, fixer_name, entries, results, total_ite
     from ..cli import _resolve_lang
     fix_lang = _resolve_lang(args)
     fix_lang_name = fix_lang.name if fix_lang else None
-    narrative = compute_narrative(state, lang=fix_lang_name)
+    narrative = compute_narrative(state, lang=fix_lang_name, command="fix")
     _write_query({"command": "fix", "fixer": fixer_name,
                   "files_fixed": len(results), "items_fixed": total_items,
                   "findings_resolved": len(resolved_ids),
@@ -119,7 +119,7 @@ def _report_dry_run(args, fixer_name, entries, results, total_items):
     fix_lang = _resolve_lang(args)
     fix_lang_name = fix_lang.name if fix_lang else None
     state = getattr(args, "_preloaded_state", {})
-    narrative = compute_narrative(state, lang=fix_lang_name)
+    narrative = compute_narrative(state, lang=fix_lang_name, command="fix")
     _write_query({"command": "fix", "fixer": fixer_name, "dry_run": True,
                   "files_would_fix": len(results), "items_would_fix": total_items,
                   "narrative": narrative})

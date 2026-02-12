@@ -43,7 +43,7 @@ def cmd_resolve(args):
     from ..cli import _resolve_lang
     lang = _resolve_lang(args)
     lang_name = lang.name if lang else None
-    narrative = compute_narrative(state, lang=lang_name)
+    narrative = compute_narrative(state, lang=lang_name, command="resolve")
     if narrative.get("milestone"):
         print(c(f"  → {narrative['milestone']}", "green"))
     print()
@@ -70,3 +70,13 @@ def cmd_ignore_pattern(args):
     print(f"  Score: {state['score']}/100" +
           c(f"  (strict: {state.get('strict_score', 0)}/100)", "dim"))
     print()
+
+    from ..narrative import compute_narrative
+    from ..cli import _resolve_lang
+    lang = _resolve_lang(args)
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, lang=lang_name, command="ignore")
+    _write_query({"command": "ignore", "pattern": args.pattern,
+                  "removed": removed, "score": state["score"],
+                  "strict_score": state.get("strict_score", 0),
+                  "narrative": narrative})

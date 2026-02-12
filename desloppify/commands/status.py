@@ -105,7 +105,10 @@ def cmd_status(args):
 
     # Computed narrative headline
     from ..narrative import compute_narrative
-    narrative = compute_narrative(state)
+    from ..cli import _resolve_lang
+    lang = _resolve_lang(args)
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, lang=lang_name, command="status")
     if narrative.get("headline"):
         print(c(f"  → {narrative['headline']}", "cyan"))
         print()

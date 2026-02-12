@@ -33,7 +33,7 @@ def cmd_next(args):
     from ..cli import _resolve_lang
     lang = _resolve_lang(args)
     lang_name = lang.name if lang else None
-    narrative = compute_narrative(state, lang=lang_name)
+    narrative = compute_narrative(state, lang=lang_name, command="next")
 
     _write_query({
         "command": "next",

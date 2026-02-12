@@ -119,7 +119,7 @@ def _show_score_delta(state: dict, prev_score: float, prev_strict: float,
 
 
 def _show_post_scan_analysis(diff: dict, state: dict, lang) -> tuple[list[str], str | None, dict]:
-    """Print warnings, suggested action, and narrative. Returns (warnings, next_action, narrative)."""
+    """Print warnings, narrative headline, and top action. Returns (warnings, narrative)."""
     stats = state["stats"]
     warnings = []
     if diff["reopened"] > 5:
@@ -133,27 +133,28 @@ def _show_post_scan_analysis(diff: dict, state: dict, lang) -> tuple[list[str], 
                         f"These keep bouncing — fix properly or wontfix. "
                         f"Run: `desloppify show --chronic` to see them.")
 
-    by_tier = stats.get("by_tier", {})
-    next_action = _suggest_next_action(by_tier)
-
     if warnings:
         for w in warnings:
             print(c(f"  {w}", "yellow"))
         print()
 
-    if next_action:
-        print(c(f"  Suggested next: {next_action}", "cyan"))
-        print()
-
-    # Computed narrative headline (replaces static reflect block)
+    # Computed narrative: headline + top action as terminal suggestion
     from ..narrative import compute_narrative
     lang_name = lang.name if lang else None
-    narrative = compute_narrative(state, diff=diff, lang=lang_name)
+    narrative = compute_narrative(state, diff=diff, lang=lang_name, command="scan")
+
+    # Show top action from narrative as the terminal suggestion
+    actions = narrative.get("actions", [])
+    if actions:
+        top = actions[0]
+        print(c(f"  Suggested next: `{top['command']}` — {top['description']}", "cyan"))
+        print()
+
     if narrative.get("headline"):
         print(c(f"  → {narrative['headline']}", "cyan"))
         print()
 
-    return warnings, next_action, narrative
+    return warnings, narrative
 
 
 def cmd_scan(args):
@@ -237,12 +238,12 @@ def cmd_scan(args):
     if new_dim_scores and prev_dim_scores:
         _show_dimension_deltas(prev_dim_scores, new_dim_scores)
 
-    warnings, next_action, narrative = _show_post_scan_analysis(diff, state, lang)
+    warnings, narrative = _show_post_scan_analysis(diff, state, lang)
 
     _write_query({"command": "scan", "score": state["score"],
                   "strict_score": state.get("strict_score", 0),
                   "prev_score": prev_score, "diff": diff, "stats": state["stats"],
-                  "warnings": warnings, "next_action": next_action,
+                  "warnings": warnings,
                   "objective_score": state.get("objective_score"),
                   "objective_strict": state.get("objective_strict"),
                   "dimension_scores": state.get("dimension_scores"),
@@ -362,33 +363,3 @@ def _show_dimension_deltas(prev: dict, current: dict):
     print()
 
 
-def _suggest_next_action(by_tier: dict) -> str | None:
-    """Suggest the highest-value next command based on tier breakdown."""
-    t1 = by_tier.get("1", {})
-    t2 = by_tier.get("2", {})
-    t1_open = t1.get("open", 0)
-    t2_open = t2.get("open", 0)
-
-    if t1_open > 0:
-        return f"`desloppify fix debug-logs --dry-run` or `fix unused-imports --dry-run` ({t1_open} T1 items)"
-    if t2_open > 0:
-        return (f"`desloppify fix unused-vars --dry-run` or `fix unused-params --dry-run` "
-                f"or `fix dead-useeffect --dry-run` ({t2_open} T2 items)")
-
-    t3_open = by_tier.get("3", {}).get("open", 0)
-    t4_open = by_tier.get("4", {}).get("open", 0)
-    structural_open = t3_open + t4_open
-    if structural_open > 0:
-        return (f"{structural_open} structural items open (T3: {t3_open}, T4: {t4_open}). "
-                f"Run `desloppify show structural --status open` to review by area, "
-                f"then create per-area task docs in tasks/ for sub-agent decomposition.")
-
-    t3_debt = by_tier.get("3", {}).get("wontfix", 0)
-    t4_debt = by_tier.get("4", {}).get("wontfix", 0)
-    structural_debt = t3_debt + t4_debt
-    if structural_debt > 0:
-        return (f"{structural_debt} structural items remain as debt (T3: {t3_debt}, T4: {t4_debt}). "
-                f"Run `desloppify status` for area breakdown. "
-                f"Create per-area task docs and farm to sub-agents for decomposition.")
-
-    return None

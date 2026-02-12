@@ -93,7 +93,10 @@ def cmd_show(args):
 
     # Always write structured query file
     from ..narrative import compute_narrative
-    narrative = compute_narrative(state)
+    from ..cli import _resolve_lang
+    lang = _resolve_lang(args)
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, lang=lang_name, command="show")
     payload = _build_show_payload(matches, pattern, status_filter)
     _write_query({"command": "show", **payload, "narrative": narrative})
 
