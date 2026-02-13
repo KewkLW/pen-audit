@@ -61,6 +61,13 @@ examples:
     p_resolve.add_argument("patterns", nargs="+", help="Feature ID(s) or screen name patterns")
     p_resolve.add_argument("--state", type=str, default=None)
 
+    # match: auto-detect implemented features from codebase
+    p_match = sub.add_parser("match", help="Match features against codebase to auto-resolve implemented ones")
+    p_match.add_argument("project_dir", type=str, help="Path to the project root")
+    p_match.add_argument("--app-subdir", type=str, default="", help="App subdirectory (e.g., apps/mobile-web)")
+    p_match.add_argument("--state", type=str, default=None)
+    p_match.add_argument("--dry-run", action="store_true", help="Don't modify state, just show matches")
+
     # plan: generate output artifacts
     p_plan = sub.add_parser("plan", help="Generate development artifacts from scan")
     p_plan.add_argument("--state", type=str, default=None)
@@ -364,6 +371,54 @@ def cmd_resolve(args):
     print()
 
 
+def cmd_match(args):
+    """Match features against a codebase to auto-resolve implemented ones."""
+    from .state import load_state, save_state
+    from .codebase_matcher import match_codebase
+
+    sp = _get_state_path(args)
+    state = load_state(sp)
+
+    if not state["features"]:
+        print(c("  No scan data. Run: pen-audit scan <file>", "yellow"))
+        return
+
+    dry_run = getattr(args, "dry_run", False)
+    results = match_codebase(
+        state,
+        project_dir=args.project_dir,
+        app_subdir=getattr(args, "app_subdir", ""),
+        dry_run=dry_run,
+    )
+
+    if "error" in results:
+        print(c(f"  Error: {results['error']}", "red"))
+        return
+
+    print(c(f"\npen-audit match {'(dry run)' if dry_run else ''}\n", "bold"))
+
+    if results["matched"]:
+        print(c(f"  Implemented ({results['total_matched']}):", "green"))
+        for m in results["matched"]:
+            route_tag = " [+route]" if m.get("has_route") else ""
+            print(f"    {m['screen_name']}{route_tag}")
+
+    if results["stub"]:
+        print(c(f"\n  Stubs ({results['total_stub']}):", "yellow"))
+        for s in results["stub"]:
+            print(f"    {s['screen_name']} -> {s['page_path']}")
+
+    if results["missing"]:
+        print(c(f"\n  Missing ({results['total_missing']}):", "red"))
+        for m in results["missing"]:
+            print(f"    {m['screen_name']} (expected: /app/{m['expected_slug']})")
+
+    if not dry_run and results["total_matched"] > 0:
+        save_state(state, sp)
+        print(c(f"\n  Auto-resolved {results['total_matched']} features as implemented", "green"))
+    print()
+
+
 def cmd_plan(args):
     """Generate development artifacts."""
     from .state import load_state
@@ -398,6 +453,50 @@ def cmd_plan(args):
         else:
             print(json.dumps(routes, indent=2))
 
+    if fmt in ("jira", "all"):
+        from .formatters.jira import generate_jira_tasks
+        tasks = generate_jira_tasks(state)
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "jira-tasks.json").write_text(json.dumps(tasks, indent=2, default=str))
+            print(c(f"  Written: {output_dir / 'jira-tasks.json'} ({len(tasks)} tasks)", "green"))
+        else:
+            print(json.dumps(tasks, indent=2, default=str))
+
+    if fmt in ("stubs", "all"):
+        from .formatters.stubs import generate_stubs
+        stubs = generate_stubs(state)
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            stubs_dir = output_dir / "stubs"
+            stubs_dir.mkdir(parents=True, exist_ok=True)
+            for stub in stubs:
+                stub_path = stubs_dir / stub["path"]
+                stub_path.parent.mkdir(parents=True, exist_ok=True)
+                stub_path.write_text(stub["content"])
+            print(c(f"  Written: {len(stubs)} page stubs to {stubs_dir}/", "green"))
+        else:
+            for stub in stubs:
+                print(c(f"\n--- {stub['path']} ---", "cyan"))
+                print(stub["content"])
+
+    if fmt in ("tests", "all"):
+        from .formatters.tests import generate_test_skeletons
+        test_files = generate_test_skeletons(state)
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            tests_dir = output_dir / "tests"
+            tests_dir.mkdir(parents=True, exist_ok=True)
+            for tf in test_files:
+                test_path = tests_dir / tf["path"]
+                test_path.parent.mkdir(parents=True, exist_ok=True)
+                test_path.write_text(tf["content"])
+            print(c(f"  Written: {len(test_files)} test skeletons to {tests_dir}/", "green"))
+        else:
+            for tf in test_files:
+                print(c(f"\n--- {tf['path']} ---", "cyan"))
+                print(tf["content"])
+
     print()
 
 
@@ -411,6 +510,7 @@ def main():
         "show": cmd_show,
         "next": cmd_next,
         "resolve": cmd_resolve,
+        "match": cmd_match,
         "plan": cmd_plan,
     }
 
