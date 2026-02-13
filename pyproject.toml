@@ -3,18 +3,18 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "desloppify"
-version = "0.3.0"
-description = "Multi-language codebase health scanner and technical debt tracker"
+name = "pen-audit"
+version = "0.1.0"
+description = "Design file scanner — extracts UI features from .pen files into actionable development tasks"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = ["Pillow>=9.0.0"]
+dependencies = []
 
 [project.scripts]
-desloppify = "desloppify.cli:main"
+pen-audit = "pen_audit.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["desloppify*"]
+include = ["pen_audit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
